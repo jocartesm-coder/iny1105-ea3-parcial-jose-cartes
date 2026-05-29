@@ -89,17 +89,17 @@ K8S_VERSION=$(aws eks describe-addon-versions \
 
 if [ -z "$K8S_VERSION" ] || [ "$K8S_VERSION" == "None" ]; then
     echo "No se pudo detectar la versión de Kubernetes. Se usará la versión por defecto de AWS."
-    K8S_VERSION_FLAG=""
+    K8S_VERSION_ARGS=()
 else
     echo "Versión de Kubernetes detectada: $K8S_VERSION"
-    K8S_VERSION_FLAG="--kubernetes-version $K8S_VERSION"
+    K8S_VERSION_ARGS=("--kubernetes-version" "$K8S_VERSION")
 fi
 
 # Crear el cluster
 aws eks create-cluster \
     --name "$CLUSTER_NAME" \
     --region "$REGION" \
-    $K8S_VERSION_FLAG \
+    "${K8S_VERSION_ARGS[@]}" \
     --role-arn "$ROLE_ARN" \
     --resources-vpc-config \
         "subnetIds=$SUBNET_IDS_COMMA,endpointPublicAccess=true,endpointPrivateAccess=false" \
