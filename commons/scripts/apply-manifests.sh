@@ -3,8 +3,6 @@
 # Uso: bash commons/scripts/apply-manifests.sh <actividad>
 # Ejemplo: bash commons/scripts/apply-manifests.sh act31
 
-set -e
-
 ACTIVIDAD="${1:-}"
 
 if [ -z "$ACTIVIDAD" ]; then
@@ -42,31 +40,55 @@ echo " Directorio: $MANIFESTS_DIR"
 echo "=================================================="
 echo ""
 
-# Aplicar en orden: namespace → configmap → pvc → deployment → service → ingress
+# Detectar namespace desde los YAMLs (ignorando líneas comentadas)
+NAMESPACE=$(grep -rh "^[^#]*namespace:" "$MANIFESTS_DIR"/*.yaml 2>/dev/null \
+    | grep -v "^#" \
+    | head -1 \
+    | awk '{print $2}' \
+    | tr -d '"' \
+    | tr -d "'")
+
+# Crear el namespace automáticamente si no es default y no existe
+if [ -n "$NAMESPACE" ] && [ "$NAMESPACE" != "default" ]; then
+    NS_EXISTS=$(kubectl get namespace "$NAMESPACE" --ignore-not-found --output name 2>/dev/null)
+    if [ -z "$NS_EXISTS" ]; then
+        echo "Creando namespace: $NAMESPACE"
+        kubectl create namespace "$NAMESPACE"
+    else
+        echo "Namespace '$NAMESPACE' ya existe."
+    fi
+    echo ""
+fi
+
+# Aplicar en orden correcto
 ORDER="namespace configmap pvc deployment service ingress"
 
+APPLIED=0
 for KIND in $ORDER; do
-    FILE=$(find "$MANIFESTS_DIR" -name "${KIND}.yaml" 2>/dev/null | head -1)
+    FILE=$(find "$MANIFESTS_DIR" -maxdepth 1 -name "${KIND}.yaml" 2>/dev/null | head -1)
     if [ -n "$FILE" ]; then
         echo "Aplicando: $FILE"
         kubectl apply -f "$FILE"
+        APPLIED=$((APPLIED + 1))
     fi
 done
 
-# Aplicar cualquier otro YAML que no esté en el orden definido
+# Aplicar cualquier otro YAML no contemplado en el orden
 for FILE in "$MANIFESTS_DIR"/*.yaml; do
+    [ -f "$FILE" ] || continue
     BASENAME=$(basename "$FILE" .yaml)
     if ! echo "$ORDER" | grep -qw "$BASENAME"; then
         echo "Aplicando: $FILE"
         kubectl apply -f "$FILE"
+        APPLIED=$((APPLIED + 1))
     fi
 done
 
 echo ""
 echo "=================================================="
-echo " Manifiestos aplicados. Estado actual:"
+echo " $APPLIED manifiesto(s) aplicado(s). Estado actual:"
 echo "=================================================="
-NAMESPACE=$(grep -r "namespace:" "$MANIFESTS_DIR"/*.yaml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
+
 if [ -n "$NAMESPACE" ] && [ "$NAMESPACE" != "default" ]; then
     kubectl get pods,svc -n "$NAMESPACE"
 else
