@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # TODO: Define el nombre del PVC (debe coincidir con claimName en deployment.yaml)
+  name: ???
+  namespace: monitoring
+spec:
+  # TODO: Define el modo de acceso
+  #       ReadWriteOnce: un nodo a la vez (más común con EBS)
+  #       ReadWriteMany: múltiples nodos (requiere EFS)
+  accessModes:
+  - ???
+
+  resources:
+    requests:
+      # TODO: Define el tamaño del volumen (ej: 1Gi, 5Gi)
+      storage: ???
+
+  # TODO: Define el StorageClass
+  #       gp2: EBS General Purpose SSD (disponible en EKS por defecto)
+  storageClassName: ???

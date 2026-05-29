@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - protocol: TCP
+    port: 9090
+    targetPort: 9090
+    # TODO: Define el nodePort para acceso externo (rango válido: 30000–32767)
+    nodePort: ???
+
+  # TODO: Define el tipo de Service
+  #       Opciones: ClusterIP | NodePort | LoadBalancer
+  type: ???

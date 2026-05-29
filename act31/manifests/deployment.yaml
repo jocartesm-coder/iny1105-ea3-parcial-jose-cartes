@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  # TODO: Define el número de réplicas
+  replicas: ???
+
+  selector:
+    matchLabels:
+      app: prometheus
+
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        # TODO: Reemplaza <ACCOUNT_ID> con tu ID de cuenta AWS real
+        image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/prometheus-healthtrack:1.0.0
+
+        ports:
+        - containerPort: 9090
+
+        # TODO: Agrega la variable de entorno APP_ENV con valor "production"
+        env: []

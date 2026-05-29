@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # TODO: Define el nombre del ConfigMap
+  name: ???
+  namespace: monitoring
+data:
+  # TODO: Agrega las variables de configuración como pares clave-valor
+  # Ejemplo:
+  # APP_ENV: "production"
+  # LOG_LEVEL: "info"

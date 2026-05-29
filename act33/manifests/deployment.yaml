@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ???
+  namespace: monitoring
+spec:
+  replicas: ???
+  selector:
+    matchLabels:
+      app: ???
+  template:
+    metadata:
+      labels:
+        app: ???
+    spec:
+      containers:
+      - name: ???
+        image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/???:???
+        ports:
+        - containerPort: ???
+        # TODO: Monta el PersistentVolumeClaim en el contenedor
+        volumeMounts:
+        - name: ???
+          mountPath: ???
+      # TODO: Declara el volumen usando el PVC
+      volumes:
+      - name: ???
+        persistentVolumeClaim:
+          claimName: ???

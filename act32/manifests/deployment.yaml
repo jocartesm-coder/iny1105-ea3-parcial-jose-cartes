@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # TODO: Define el nombre del Deployment
+  name: ???
+  namespace: monitoring
+spec:
+  # TODO: Define el número de réplicas
+  replicas: ???
+
+  selector:
+    matchLabels:
+      # TODO: Define el label selector (debe coincidir con template.labels)
+      app: ???
+
+  template:
+    metadata:
+      labels:
+        # TODO: Define el label (debe coincidir con selector.matchLabels)
+        app: ???
+    spec:
+      containers:
+      - name: ???
+        # TODO: Reemplaza con la URI de tu imagen en ECR
+        image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/???:???
+
+        ports:
+        - containerPort: ???
+
+        # TODO: Define los recursos del contenedor
+        resources:
+          requests:
+            cpu: "???"
+            memory: "???"
+          limits:
+            cpu: "???"
+            memory: "???"
