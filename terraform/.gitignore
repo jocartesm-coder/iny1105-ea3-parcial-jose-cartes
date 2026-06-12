@@ -1,0 +1,12 @@
+# Terraform state — contiene credenciales e IDs de recursos
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+
+# Variables con datos sensibles (si se usan overrides locales)
+*.auto.tfvars
+override.tf
+override.tf.json
