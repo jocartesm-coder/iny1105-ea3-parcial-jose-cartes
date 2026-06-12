@@ -29,18 +29,29 @@ aws sts get-caller-identity --query "{Account:Account, Arn:Arn}" --output table 
 }
 echo ""
 
-# Verificar que LabEksClusterRole existe (el nombre incluye un sufijo aleatorio por sesión)
-echo "[2/5] Buscando LabEksClusterRole..."
+# Detectar roles EKS (nombres aleatorios por sesión en Learner Lab)
+echo "[2/5] Buscando roles EKS (LabEksClusterRole y LabEksNodeRole)..."
 ROLE_ARN=$(aws iam list-roles \
     --query "Roles[?contains(RoleName, 'LabEksClusterRole')].Arn" \
     --output text | tr '\t' '\n' | head -1)
 if [ -z "$ROLE_ARN" ]; then
     echo "ERROR: No se encontró ningún rol con 'LabEksClusterRole' en el nombre."
-    echo "Roles disponibles:"
-    aws iam list-roles --query "Roles[].RoleName" --output text | tr '\t' '\n' | grep -i eks || echo "(ninguno con 'eks')"
+    echo "Roles disponibles con 'eks' en el nombre:"
+    aws iam list-roles --query "Roles[].RoleName" --output text | tr '\t' '\n' | grep -i eks || echo "(ninguno)"
     exit 1
 fi
-echo "Rol encontrado: $ROLE_ARN"
+echo "  Rol de cluster : $ROLE_ARN"
+
+NODE_ROLE_ARN=$(aws iam list-roles \
+    --query "Roles[?contains(RoleName, 'LabEksNodeRole')].Arn" \
+    --output text | tr '\t' '\n' | head -1)
+if [ -z "$NODE_ROLE_ARN" ]; then
+    echo "ERROR: No se encontró ningún rol con 'LabEksNodeRole' en el nombre."
+    echo "Roles disponibles con 'eks' en el nombre:"
+    aws iam list-roles --query "Roles[].RoleName" --output text | tr '\t' '\n' | grep -i eks || echo "(ninguno)"
+    exit 1
+fi
+echo "  Rol de nodos   : $NODE_ROLE_ARN"
 echo ""
 
 # Verificar límite de instancias EC2 activas
@@ -146,7 +157,7 @@ aws eks create-nodegroup \
     --cluster-name "$CLUSTER_NAME" \
     --nodegroup-name "$NODE_GROUP" \
     --region "$REGION" \
-    --node-role "$ROLE_ARN" \
+    --node-role "$NODE_ROLE_ARN" \
     --subnets "${SUBNET_ARRAY[@]}" \
     --instance-types "$NODE_TYPE" \
     --scaling-config "minSize=$NODES_MIN,maxSize=$NODES_MAX,desiredSize=$NODES_DESIRED" \
@@ -171,7 +182,7 @@ while true; do
         break
     elif [ "$STATUS" == "CREATE_FAILED" ]; then
         echo "ERROR: El Node Group quedó en estado CREATE_FAILED."
-        echo "Verifica que LabEksClusterRole tiene la política AmazonEC2ContainerRegistryReadOnly."
+        echo "Verifica los permisos de $NODE_ROLE_ARN."
         exit 1
     fi
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
