@@ -93,106 +93,132 @@ read -ra SUBNET_ARRAY <<< "$SUBNET_IDS"
 echo "Subnets: $SUBNET_IDS_COMMA"
 echo ""
 
-echo "[5/5] Creando cluster EKS..."
-echo "Esto tardará 10-15 minutos. No cierres la terminal."
-echo ""
+echo "[5/5] Cluster EKS..."
 
-# Detectar versión de Kubernetes disponible (sin hardcodear)
-K8S_VERSION=$(aws eks describe-addon-versions \
-    --region "$REGION" \
-    --query "sort_by(addons[0].addonVersions, &addonVersion)[-1].compatibilities[0].clusterVersion" \
-    --output text 2>/dev/null || echo "")
+# Verificar si el cluster ya existe
+CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" \
+    --query "cluster.status" --output text 2>/dev/null)
 
-if [ -z "$K8S_VERSION" ] || [ "$K8S_VERSION" == "None" ]; then
-    echo "No se pudo detectar la versión de Kubernetes. Se usará la versión por defecto de AWS."
-    K8S_VERSION_ARGS=()
+if [ -z "$CLUSTER_STATUS" ]; then
+    echo "Creando cluster EKS (esto tardará 10-15 minutos)..."
+
+    # Detectar versión de Kubernetes disponible (sin hardcodear)
+    K8S_VERSION=$(aws eks describe-addon-versions \
+        --region "$REGION" \
+        --query "sort_by(addons[0].addonVersions, &addonVersion)[-1].compatibilities[0].clusterVersion" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$K8S_VERSION" ] || [ "$K8S_VERSION" == "None" ]; then
+        echo "No se pudo detectar la versión de Kubernetes. Se usará la versión por defecto de AWS."
+        K8S_VERSION_ARGS=()
+    else
+        echo "Versión de Kubernetes detectada: $K8S_VERSION"
+        K8S_VERSION_ARGS=("--kubernetes-version" "$K8S_VERSION")
+    fi
+
+    aws eks create-cluster \
+        --name "$CLUSTER_NAME" \
+        --region "$REGION" \
+        "${K8S_VERSION_ARGS[@]}" \
+        --role-arn "$ROLE_ARN" \
+        --resources-vpc-config \
+            "subnetIds=$SUBNET_IDS_COMMA,endpointPublicAccess=true,endpointPrivateAccess=false" \
+        --output table
+
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Falló la creación del cluster. Revisa los mensajes anteriores."
+        exit 1
+    fi
+    CLUSTER_STATUS="CREATING"
 else
-    echo "Versión de Kubernetes detectada: $K8S_VERSION"
-    K8S_VERSION_ARGS=("--kubernetes-version" "$K8S_VERSION")
+    echo "  Cluster ya existe (estado: $CLUSTER_STATUS) — omitiendo creación."
 fi
 
-# Crear el cluster
-aws eks create-cluster \
-    --name "$CLUSTER_NAME" \
-    --region "$REGION" \
-    "${K8S_VERSION_ARGS[@]}" \
-    --role-arn "$ROLE_ARN" \
-    --resources-vpc-config \
-        "subnetIds=$SUBNET_IDS_COMMA,endpointPublicAccess=true,endpointPrivateAccess=false" \
-    --output table
-
-if [ $? -ne 0 ]; then
-    echo "ERROR: Falló la creación del cluster. Revisa los mensajes anteriores."
-    exit 1
+if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+    echo "Esperando a que el cluster esté ACTIVE (puede tardar 10 min)..."
+    TIMEOUT=1200
+    ELAPSED=0
+    while true; do
+        CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" \
+            --query "cluster.status" --output text 2>/dev/null)
+        if [ "$CLUSTER_STATUS" == "ACTIVE" ]; then
+            echo "✓ Cluster ACTIVE"
+            break
+        elif [ "$CLUSTER_STATUS" == "FAILED" ]; then
+            echo "ERROR: El cluster quedó en estado FAILED."
+            echo "Revisa los permisos de LabEksClusterRole e intenta de nuevo."
+            exit 1
+        fi
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "TIMEOUT: El cluster tardó más de 20 minutos. Verifica en la consola AWS."
+            exit 1
+        fi
+        echo "  Estado: $CLUSTER_STATUS — esperando... ($ELAPSED s)"
+        sleep 30
+        ELAPSED=$((ELAPSED + 30))
+    done
+else
+    echo "✓ Cluster ACTIVE"
 fi
-
-echo "Esperando a que el cluster esté ACTIVE (puede tardar 10 min)..."
-# Timeout de 20 minutos para evitar loop infinito
-TIMEOUT=1200
-ELAPSED=0
-while true; do
-    STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" \
-        --query "cluster.status" --output text 2>/dev/null)
-    if [ "$STATUS" == "ACTIVE" ]; then
-        echo "✓ Cluster ACTIVE"
-        break
-    elif [ "$STATUS" == "FAILED" ]; then
-        echo "ERROR: El cluster quedó en estado FAILED."
-        echo "Revisa los permisos de LabEksClusterRole e intenta de nuevo."
-        exit 1
-    fi
-    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-        echo "TIMEOUT: El cluster tardó más de 20 minutos. Verifica en la consola AWS."
-        exit 1
-    fi
-    echo "  Estado: $STATUS — esperando... ($ELAPSED s)"
-    sleep 30
-    ELAPSED=$((ELAPSED + 30))
-done
 echo ""
 
-# Crear el Node Group
-echo "Creando Node Group: $NODE_GROUP..."
-aws eks create-nodegroup \
+# Verificar si el Node Group ya existe
+NG_STATUS=$(aws eks describe-nodegroup \
     --cluster-name "$CLUSTER_NAME" \
     --nodegroup-name "$NODE_GROUP" \
     --region "$REGION" \
-    --node-role "$NODE_ROLE_ARN" \
-    --subnets "${SUBNET_ARRAY[@]}" \
-    --instance-types "$NODE_TYPE" \
-    --scaling-config "minSize=$NODES_MIN,maxSize=$NODES_MAX,desiredSize=$NODES_DESIRED" \
-    --output table
+    --query "nodegroup.status" --output text 2>/dev/null)
 
-if [ $? -ne 0 ]; then
-    echo "ERROR: Falló la creación del Node Group."
-    exit 1
-fi
-
-echo "Esperando a que los nodos estén ACTIVE (3-5 min adicionales)..."
-ELAPSED=0
-TIMEOUT=600
-while true; do
-    STATUS=$(aws eks describe-nodegroup \
+if [ -z "$NG_STATUS" ]; then
+    echo "Creando Node Group: $NODE_GROUP..."
+    aws eks create-nodegroup \
         --cluster-name "$CLUSTER_NAME" \
         --nodegroup-name "$NODE_GROUP" \
         --region "$REGION" \
-        --query "nodegroup.status" --output text 2>/dev/null)
-    if [ "$STATUS" == "ACTIVE" ]; then
-        echo "✓ Node Group ACTIVE"
-        break
-    elif [ "$STATUS" == "CREATE_FAILED" ]; then
-        echo "ERROR: El Node Group quedó en estado CREATE_FAILED."
-        echo "Verifica los permisos de $NODE_ROLE_ARN."
+        --node-role "$NODE_ROLE_ARN" \
+        --subnets "${SUBNET_ARRAY[@]}" \
+        --instance-types "$NODE_TYPE" \
+        --scaling-config "minSize=$NODES_MIN,maxSize=$NODES_MAX,desiredSize=$NODES_DESIRED" \
+        --output table
+
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Falló la creación del Node Group."
         exit 1
     fi
-    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-        echo "TIMEOUT: Los nodos tardaron más de 10 minutos."
-        exit 1
-    fi
-    echo "  Estado: $STATUS — esperando... ($ELAPSED s)"
-    sleep 30
-    ELAPSED=$((ELAPSED + 30))
-done
+    NG_STATUS="CREATING"
+else
+    echo "  Node Group ya existe (estado: $NG_STATUS) — omitiendo creación."
+fi
+
+if [ "$NG_STATUS" != "ACTIVE" ]; then
+    echo "Esperando a que los nodos estén ACTIVE (3-5 min adicionales)..."
+    ELAPSED=0
+    TIMEOUT=600
+    while true; do
+        NG_STATUS=$(aws eks describe-nodegroup \
+            --cluster-name "$CLUSTER_NAME" \
+            --nodegroup-name "$NODE_GROUP" \
+            --region "$REGION" \
+            --query "nodegroup.status" --output text 2>/dev/null)
+        if [ "$NG_STATUS" == "ACTIVE" ]; then
+            echo "✓ Node Group ACTIVE"
+            break
+        elif [ "$NG_STATUS" == "CREATE_FAILED" ]; then
+            echo "ERROR: El Node Group quedó en estado CREATE_FAILED."
+            echo "Verifica los permisos de $NODE_ROLE_ARN."
+            exit 1
+        fi
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "TIMEOUT: Los nodos tardaron más de 10 minutos."
+            exit 1
+        fi
+        echo "  Estado: $NG_STATUS — esperando... ($ELAPSED s)"
+        sleep 30
+        ELAPSED=$((ELAPSED + 30))
+    done
+else
+    echo "✓ Node Group ACTIVE"
+fi
 echo ""
 
 # Configurar kubectl
