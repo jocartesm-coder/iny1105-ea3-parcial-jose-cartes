@@ -1,37 +1,37 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  # TODO: Define el nombre del Deployment
-  name: ???
+  name: prometheus-v2
   namespace: monitoring
 spec:
-  # TODO: Define el número de réplicas
-  replicas: ???
+  replicas: 2
 
   selector:
     matchLabels:
-      # TODO: Define el label selector (debe coincidir con template.labels)
-      app: ???
+      app: prometheus-v2
 
   template:
     metadata:
       labels:
-        # TODO: Define el label (debe coincidir con selector.matchLabels)
-        app: ???
+        app: prometheus-v2
     spec:
       containers:
-      - name: ???
-        # TODO: Reemplaza con la URI de tu imagen en ECR
-        image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/???:???
+      - name: prometheus
+        # Imagen pública de referencia — reemplaza con tu imagen ECR si la tienes:
+        # image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/prometheus-healthtrack:1.0.0
+        image: prom/prometheus:latest
 
         ports:
-        - containerPort: ???
+        - containerPort: 9090
 
-        # TODO: Define los recursos del contenedor
         resources:
           requests:
-            cpu: "???"
-            memory: "???"
+            cpu: "100m"
+            memory: "256Mi"
           limits:
-            cpu: "???"
-            memory: "???"
+            cpu: "500m"
+            memory: "512Mi"
+
+        envFrom:
+        - configMapRef:
+            name: prometheus-config

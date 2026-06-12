@@ -4,8 +4,7 @@ metadata:
   name: prometheus
   namespace: monitoring
 spec:
-  # TODO: Define el número de réplicas
-  replicas: ???
+  replicas: 1
 
   selector:
     matchLabels:
@@ -18,11 +17,13 @@ spec:
     spec:
       containers:
       - name: prometheus
-        # TODO: Reemplaza <ACCOUNT_ID> con tu ID de cuenta AWS real
-        image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/prometheus-healthtrack:1.0.0
+        # Imagen pública de referencia — reemplaza con tu imagen ECR si la tienes:
+        # image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/prometheus-healthtrack:1.0.0
+        image: prom/prometheus:latest
 
         ports:
         - containerPort: 9090
 
-        # TODO: Agrega la variable de entorno APP_ENV con valor "production"
-        env: []
+        env:
+        - name: APP_ENV
+          value: "production"
