@@ -9,7 +9,7 @@ resource "kubernetes_namespace" "monitoring" {
     name = var.namespace
   }
 
-  depends_on = [null_resource.update_kubeconfig]
+  depends_on = [data.aws_eks_cluster.main]
 }
 
 # ════════════════════════════════════════════════════════════════════════════

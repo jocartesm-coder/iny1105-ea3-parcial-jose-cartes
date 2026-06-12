@@ -23,12 +23,16 @@ provider "aws" {
   region = var.region
 }
 
-# El provider kubernetes se configura con los datos del cluster creado en este
-# mismo apply. Se usa depends_on en los recursos kubernetes_* para garantizar
-# que el cluster exista antes de intentar conectarse.
+# El cluster EKS es creado por create-cluster.sh (requiere iam:PassRole
+# con credenciales de usuario, no disponible desde el rol de la EC2).
+# Terraform lee el cluster existente para configurar el provider kubernetes.
+data "aws_eks_cluster" "main" {
+  name = var.cluster_name
+}
+
 provider "kubernetes" {
-  host                   = aws_eks_cluster.main.endpoint
-  cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)
+  host                   = data.aws_eks_cluster.main.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.main.certificate_authority[0].data)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -41,90 +45,9 @@ provider "kubernetes" {
 
 data "aws_caller_identity" "current" {}
 
-# El nombre del rol varía por sesión del Learner Lab (sufijo aleatorio).
-# Se detecta dinámicamente en deploy.sh y se pasa como TF_VAR_eks_role_arn.
-# Fallback: busca el primero que contenga 'LabEksClusterRole' en el nombre.
-data "aws_iam_roles" "eks_cluster_role" {
-  name_regex = ".*LabEksClusterRole.*"
-}
-
-# Subnets públicas de la VPC por defecto (primeras 2)
-data "aws_subnets" "default_public" {
-  filter {
-    name   = "default-for-az"
-    values = ["true"]
-  }
-}
-
-# ── EKS Cluster ───────────────────────────────────────────────────────────────
-
-resource "aws_eks_cluster" "main" {
-  name     = var.cluster_name
-  role_arn = local.eks_role_arn
-
-  vpc_config {
-    subnet_ids              = slice(tolist(data.aws_subnets.default_public.ids), 0, 2)
-    endpoint_public_access  = true
-    endpoint_private_access = false
-  }
-
-  # Learner Lab: no se especifica versión → AWS usa la última disponible
-  # Si se quiere fijar: version = "1.29"
-
-  timeouts {
-    create = "25m"
-    delete = "20m"
-  }
-}
-
-# ── EKS Node Group ────────────────────────────────────────────────────────────
-
-resource "aws_eks_node_group" "workers" {
-  cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "standard-workers"
-  node_role_arn   = local.eks_role_arn
-  subnet_ids      = slice(tolist(data.aws_subnets.default_public.ids), 0, 2)
-  instance_types  = [var.node_type]
-
-  scaling_config {
-    desired_size = var.nodes_desired
-    min_size     = var.nodes_min
-    max_size     = var.nodes_max
-  }
-
-  depends_on = [aws_eks_cluster.main]
-
-  timeouts {
-    create = "20m"
-    delete = "20m"
-  }
-}
-
-# ── Actualizar kubeconfig al crear el cluster ─────────────────────────────────
-# Permite que kubectl y los providers kubernetes funcionen correctamente
-# tras el apply sin necesidad de pasos manuales.
-
-resource "null_resource" "update_kubeconfig" {
-  triggers = {
-    cluster_name = aws_eks_cluster.main.name
-    endpoint     = aws_eks_cluster.main.endpoint
-  }
-
-  provisioner "local-exec" {
-    command = "aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}"
-  }
-
-  depends_on = [aws_eks_node_group.workers]
-}
-
 # ── Locals ────────────────────────────────────────────────────────────────────
 
 locals {
-  # El nombre del rol varía por sesión del Learner Lab (sufijo aleatorio).
-  # deploy.sh lo detecta y lo pasa como TF_VAR_eks_role_arn.
-  # Fallback: toma el primero que coincida con el name_regex.
-  eks_role_arn = var.eks_role_arn != "" ? var.eks_role_arn : tolist(data.aws_iam_roles.eks_cluster_role.arns)[0]
-
   account_id = data.aws_caller_identity.current.account_id
   ecr_url    = "${local.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_repo_name}"
   image_uri  = "${local.ecr_url}:${var.image_tag}"

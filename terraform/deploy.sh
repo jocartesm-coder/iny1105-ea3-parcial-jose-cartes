@@ -1,12 +1,17 @@
 #!/bin/bash
-# deploy.sh — Despliega act31 y act32 completos en el Learner Lab usando Terraform
+# deploy.sh — Despliega act31 y act32 en el Learner Lab
 # Uso: bash terraform/deploy.sh
+#
+# Flujo:
+#   Paso 1 — crea el cluster EKS con el script bash (requiere credenciales de usuario)
+#   Paso 2 — Terraform crea ECR, construye/sube imagen y aplica manifiestos K8s
 #
 # Ejecutar desde la raíz del repositorio iny1105-ea3-base.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$SCRIPT_DIR"
 
 REGION="us-east-1"
@@ -23,67 +28,57 @@ echo ""
 echo "[prereq] Verificando herramientas..."
 for cmd in terraform aws docker kubectl; do
     if ! command -v "$cmd" &>/dev/null; then
-        echo "ERROR: '$cmd' no está instalado. Instálalo antes de continuar."
+        echo "ERROR: '$cmd' no está instalado."
         exit 1
     fi
 done
 
 echo "[prereq] Verificando credenciales AWS..."
-aws sts get-caller-identity --query "{Account:Account}" --output table || {
+aws sts get-caller-identity --query "{Account:Account, Arn:Arn}" --output table || {
     echo "ERROR: AWS CLI no está configurado con credenciales del Learner Lab."
     exit 1
 }
 
-echo "[prereq] Buscando rol EKS del Learner Lab..."
-EKS_ROLE_ARN=$(aws iam list-roles \
-    --query "Roles[?contains(RoleName, 'LabEksClusterRole')].Arn" \
-    --output text | tr '\t' '\n' | head -1)
-if [ -z "$EKS_ROLE_ARN" ]; then
-    echo "ERROR: No se encontró ningún rol con 'LabEksClusterRole' en el nombre."
-    echo "Roles disponibles con 'Eks' o 'eks':"
-    aws iam list-roles --query "Roles[?contains(RoleName, 'ks')].RoleName" --output text
-    exit 1
-fi
-echo "Rol encontrado: $EKS_ROLE_ARN"
-
-# Exportar para que Terraform lo use como variable de entorno
-export TF_VAR_eks_role_arn="$EKS_ROLE_ARN"
-
 echo "[prereq] Verificando Docker daemon..."
 docker info > /dev/null 2>&1 || {
-    echo "ERROR: Docker no está corriendo. Inicia Docker antes de continuar."
+    echo "ERROR: Docker no está corriendo."
     exit 1
 }
 echo ""
 
-# ── Terraform init ────────────────────────────────────────────────────────────
+# ── Paso 1: Cluster EKS ───────────────────────────────────────────────────────
+# La creación del cluster requiere iam:PassRole, que solo está disponible
+# con las credenciales de usuario del Learner Lab (no desde el rol de la EC2).
+# Usamos el script bash existente que ya está validado para el Learner Lab.
 
-echo "[1/4] terraform init..."
-terraform init -upgrade
-echo ""
+echo "=================================================="
+echo " Paso 1/3 — Cluster EKS"
+echo "=================================================="
 
-# ── Fase 1: Crear el cluster EKS ──────────────────────────────────────────────
-# Se aplica solo el cluster y el node group primero.
-# El provider kubernetes necesita que el cluster exista para planificar.
+# Verificar si el cluster ya existe
+CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" \
+    --query "cluster.status" --output text 2>/dev/null || echo "NOT_FOUND")
 
-echo "[2/4] Creando cluster EKS (puede tardar 15-20 min)..."
-terraform apply \
-    -target=aws_eks_cluster.main \
-    -target=aws_eks_node_group.workers \
-    -target=null_resource.update_kubeconfig \
-    -auto-approve
+if [ "$CLUSTER_STATUS" == "ACTIVE" ]; then
+    echo "✓ Cluster $CLUSTER_NAME ya existe y está ACTIVE — omitiendo creación."
+elif [ "$CLUSTER_STATUS" == "CREATING" ]; then
+    echo "El cluster está en estado CREATING. Esperando..."
+    bash "$REPO_ROOT/commons/scripts/create-cluster.sh" --skip-create 2>/dev/null || true
+else
+    echo "Creando cluster EKS con create-cluster.sh..."
+    bash "$REPO_ROOT/commons/scripts/create-cluster.sh"
+fi
 echo ""
 
 # ── Verificar nodos ───────────────────────────────────────────────────────────
 
-echo "[3/4] Verificando nodos del cluster..."
-echo "Esperando a que los nodos estén Ready..."
+echo "Verificando nodos del cluster..."
 TIMEOUT=300
 ELAPSED=0
 while true; do
     READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || echo 0)
-    if [ "$READY" -ge 2 ]; then
-        echo "✓ $READY nodos Ready"
+    if [ "$READY" -ge 1 ]; then
+        echo "✓ $READY nodo(s) Ready"
         break
     fi
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
@@ -96,18 +91,25 @@ while true; do
 done
 echo ""
 
-# ── Fase 2: ECR + imagen + manifiestos K8s ────────────────────────────────────
-
-echo "[4/4] Desplegando ECR, imagen Docker y manifiestos Kubernetes..."
-terraform apply -auto-approve
-echo ""
-
-# ── Verificación final ────────────────────────────────────────────────────────
+# ── Paso 2: Terraform — ECR + imagen + manifiestos K8s ───────────────────────
 
 echo "=================================================="
-echo " Verificación del despliegue"
+echo " Paso 2/3 — ECR + imagen Docker + manifiestos K8s"
 echo "=================================================="
+
+echo "terraform init..."
+terraform init -upgrade -input=false
+
 echo ""
+echo "terraform apply..."
+terraform apply -auto-approve -input=false
+echo ""
+
+# ── Paso 3: Verificación ─────────────────────────────────────────────────────
+
+echo "=================================================="
+echo " Paso 3/3 — Verificación"
+echo "=================================================="
 
 echo "Pods en namespace monitoring:"
 kubectl get pods -n monitoring
@@ -118,10 +120,10 @@ kubectl get svc -n monitoring
 echo ""
 
 echo "ConfigMap prometheus-config:"
-kubectl describe configmap prometheus-config -n monitoring 2>/dev/null | grep -A5 "Data"
+kubectl get configmap prometheus-config -n monitoring -o jsonpath='{.data}' | python3 -m json.tool 2>/dev/null || \
+    kubectl describe configmap prometheus-config -n monitoring | grep -A10 "^Data"
 echo ""
 
-# Obtener IP de un nodo
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null || echo "")
 if [ -n "$NODE_IP" ]; then
     echo "=================================================="
@@ -130,15 +132,11 @@ if [ -n "$NODE_IP" ]; then
     echo "   Act 3.2 — Prometheus-v2: http://$NODE_IP:30092"
     echo "=================================================="
     echo ""
-    echo "IMPORTANTE: Si no puedes acceder, agrega reglas al Security Group de los nodos:"
+    echo "Si no puedes acceder, agrega estas reglas al Security Group de los nodos:"
     echo "  TCP 30090 desde 0.0.0.0/0"
     echo "  TCP 30092 desde 0.0.0.0/0"
 else
-    echo "NOTA: No se pudo obtener IP externa de los nodos automáticamente."
-    echo "Ejecuta: kubectl get nodes -o wide"
+    echo "Ejecuta 'kubectl get nodes -o wide' para obtener la IP externa."
 fi
 echo ""
-
-echo "terraform output  ← para ver todos los outputs"
-echo ""
-echo "Al terminar:  bash terraform/destroy.sh"
+echo "Al terminar la sesión: bash terraform/destroy.sh"
