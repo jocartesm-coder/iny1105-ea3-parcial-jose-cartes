@@ -29,12 +29,17 @@ aws sts get-caller-identity --query "{Account:Account, Arn:Arn}" --output table 
 }
 echo ""
 
-# Verificar que LabEksClusterRole existe
-echo "[2/5] Verificando LabEksClusterRole..."
-ROLE_ARN=$(aws iam get-role --role-name LabEksClusterRole --query "Role.Arn" --output text 2>/dev/null) || {
-    echo "ERROR: No se encontró el rol LabEksClusterRole en esta cuenta."
+# Verificar que LabEksClusterRole existe (el nombre incluye un sufijo aleatorio por sesión)
+echo "[2/5] Buscando LabEksClusterRole..."
+ROLE_ARN=$(aws iam list-roles \
+    --query "Roles[?contains(RoleName, 'LabEksClusterRole')].Arn" \
+    --output text | tr '\t' '\n' | head -1)
+if [ -z "$ROLE_ARN" ]; then
+    echo "ERROR: No se encontró ningún rol con 'LabEksClusterRole' en el nombre."
+    echo "Roles disponibles:"
+    aws iam list-roles --query "Roles[].RoleName" --output text | tr '\t' '\n' | grep -i eks || echo "(ninguno con 'eks')"
     exit 1
-}
+fi
 echo "Rol encontrado: $ROLE_ARN"
 echo ""
 
