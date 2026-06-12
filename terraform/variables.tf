@@ -61,3 +61,9 @@ variable "nodeport_act32" {
   type        = number
   default     = 30092
 }
+
+variable "eks_role_arn" {
+  description = "ARN del rol IAM para EKS. El Learner Lab genera un nombre aleatorio por sesión. deploy.sh lo detecta automáticamente y lo pasa como TF_VAR_eks_role_arn."
+  type        = string
+  default     = ""
+}

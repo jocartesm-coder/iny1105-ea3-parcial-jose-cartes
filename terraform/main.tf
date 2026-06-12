@@ -41,9 +41,11 @@ provider "kubernetes" {
 
 data "aws_caller_identity" "current" {}
 
-# Rol LabEksClusterRole — ya existe en el Learner Lab, no se crea
-data "aws_iam_role" "eks_cluster_role" {
-  name = "LabEksClusterRole"
+# El nombre del rol varía por sesión del Learner Lab (sufijo aleatorio).
+# Se detecta dinámicamente en deploy.sh y se pasa como TF_VAR_eks_role_arn.
+# Fallback: busca el primero que contenga 'LabEksClusterRole' en el nombre.
+data "aws_iam_roles" "eks_cluster_role" {
+  name_regex = ".*LabEksClusterRole.*"
 }
 
 # Subnets públicas de la VPC por defecto (primeras 2)
@@ -58,7 +60,7 @@ data "aws_subnets" "default_public" {
 
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
-  role_arn = data.aws_iam_role.eks_cluster_role.arn
+  role_arn = local.eks_role_arn
 
   vpc_config {
     subnet_ids              = slice(tolist(data.aws_subnets.default_public.ids), 0, 2)
@@ -80,7 +82,7 @@ resource "aws_eks_cluster" "main" {
 resource "aws_eks_node_group" "workers" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "standard-workers"
-  node_role_arn   = data.aws_iam_role.eks_cluster_role.arn
+  node_role_arn   = local.eks_role_arn
   subnet_ids      = slice(tolist(data.aws_subnets.default_public.ids), 0, 2)
   instance_types  = [var.node_type]
 
@@ -118,6 +120,11 @@ resource "null_resource" "update_kubeconfig" {
 # ── Locals ────────────────────────────────────────────────────────────────────
 
 locals {
+  # El nombre del rol varía por sesión del Learner Lab (sufijo aleatorio).
+  # deploy.sh lo detecta y lo pasa como TF_VAR_eks_role_arn.
+  # Fallback: toma el primero que coincida con el name_regex.
+  eks_role_arn = var.eks_role_arn != "" ? var.eks_role_arn : tolist(data.aws_iam_roles.eks_cluster_role.arns)[0]
+
   account_id = data.aws_caller_identity.current.account_id
   ecr_url    = "${local.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_repo_name}"
   image_uri  = "${local.ecr_url}:${var.image_tag}"

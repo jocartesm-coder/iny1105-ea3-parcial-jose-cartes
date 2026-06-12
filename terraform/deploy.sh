@@ -34,11 +34,20 @@ aws sts get-caller-identity --query "{Account:Account}" --output table || {
     exit 1
 }
 
-echo "[prereq] Verificando LabEksClusterRole..."
-aws iam get-role --role-name LabEksClusterRole --query "Role.Arn" --output text || {
-    echo "ERROR: No se encontró LabEksClusterRole. Verifica que estás en el Learner Lab."
+echo "[prereq] Buscando rol EKS del Learner Lab..."
+EKS_ROLE_ARN=$(aws iam list-roles \
+    --query "Roles[?contains(RoleName, 'LabEksClusterRole')].Arn" \
+    --output text | tr '\t' '\n' | head -1)
+if [ -z "$EKS_ROLE_ARN" ]; then
+    echo "ERROR: No se encontró ningún rol con 'LabEksClusterRole' en el nombre."
+    echo "Roles disponibles con 'Eks' o 'eks':"
+    aws iam list-roles --query "Roles[?contains(RoleName, 'ks')].RoleName" --output text
     exit 1
-}
+fi
+echo "Rol encontrado: $EKS_ROLE_ARN"
+
+# Exportar para que Terraform lo use como variable de entorno
+export TF_VAR_eks_role_arn="$EKS_ROLE_ARN"
 
 echo "[prereq] Verificando Docker daemon..."
 docker info > /dev/null 2>&1 || {
