@@ -10,7 +10,7 @@ if [ -z "$ACTIVIDAD" ]; then
     echo "Ejemplo: bash commons/scripts/apply-manifests.sh act31"
     echo ""
     echo "Actividades disponibles:"
-    for d in act31 act32 act33 act34; do
+    for d in act31 act32 act33; do
         if [ -d "$d/manifests" ]; then
             echo "  $d"
         fi

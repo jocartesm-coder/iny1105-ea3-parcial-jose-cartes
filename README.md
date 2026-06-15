@@ -44,17 +44,9 @@ iny1105-ea3-nombre-apellido/
 │   │   ├── service.yaml
 │   │   └── configmap.yaml  ← completar: secciones TODO
 │   └── README.md
-├── act33/                  ← Act 3.3: Almacenamiento y aplicaciones stateful
-│   ├── manifests/
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── pvc.yaml        ← completar: secciones TODO
-│   └── README.md
-├── act34/                  ← Act 3.4: Networking en Kubernetes
-│   ├── manifests/
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── ingress.yaml    ← completar: secciones TODO
+├── act33/                  ← Act 3.3: WordPress + MySQL (almacenamiento, networking y autoscaling)
+│   ├── manifests/          ← PVC (EBS/EFS), Deployments, Services, Ingress (ALB),
+│   │                          HPA y NetworkPolicy
 │   └── README.md
 ├── commons/
 │   └── scripts/
