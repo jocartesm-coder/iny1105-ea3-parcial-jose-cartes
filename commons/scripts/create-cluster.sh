@@ -1,15 +1,27 @@
 #!/bin/bash
 # create-cluster.sh — Crea el cluster EKS en AWS Learner Lab
-# Uso: bash commons/scripts/create-cluster.sh
+# Uso:
+#   bash commons/scripts/create-cluster.sh
+#   AZS="us-east-1a,us-east-1b" bash commons/scripts/create-cluster.sh
 #
 # Requisitos:
 #   - AWS CLI configurado con credenciales del Learner Lab
 #   - Región: us-east-1
 #   - Rol disponible: LabEksClusterRole
+#
+# Sobre las AZ:
+#   EKS necesita subnets en al menos 2 zonas de disponibilidad (AZ) distintas.
+#   Algunas AZ del Learner Lab no soportan EKS o no tienen capacidad (ej:
+#   us-east-1e suele fallar). Si la creación falla por la AZ elegida, fija las
+#   AZ buenas con la variable AZS, por ejemplo:
+#       AZS="us-east-1a,us-east-1b" bash commons/scripts/create-cluster.sh
 
 CLUSTER_NAME="iny1105-ea3-cluster"
 REGION="us-east-1"
 K8S_VERSION="1.32"          # Versión de Kubernetes fija para el cluster
+# AZ a usar (separadas por coma). Vacío = el script elige 2 AZ automáticamente.
+# Sobreescribible por variable de entorno: AZS="us-east-1a,us-east-1b" bash ...
+AZS="${AZS:-}"
 NODE_GROUP="standard-workers"
 NODE_TYPE="t3.small"
 NODES_DESIRED=2
@@ -74,24 +86,62 @@ if [ "$RUNNING" -gt 7 ]; then
 fi
 echo ""
 
-# Obtener subnets públicas de la VPC por defecto (manejo robusto)
+# Obtener subnets públicas de la VPC por defecto, en 2 AZ distintas.
 echo "[4/5] Obteniendo subnets de la VPC por defecto..."
-SUBNET_IDS=$(aws ec2 describe-subnets \
-    --region "$REGION" \
-    --filters "Name=default-for-az,Values=true" \
-    --query "Subnets[0:2].SubnetId" \
-    --output text)
 
-if [ -z "$SUBNET_IDS" ]; then
-    echo "ERROR: No se encontraron subnets públicas en us-east-1."
+if [ -n "$AZS" ]; then
+    # AZ fijadas por el usuario (ej: "us-east-1a,us-east-1b")
+    IFS=',' read -ra AZ_ARRAY <<< "$AZS"
+    echo "  AZ solicitadas: $AZS"
+    SUBNET_IDS=""
+    for AZ in "${AZ_ARRAY[@]}"; do
+        AZ_TRIM=$(echo "$AZ" | tr -d '[:space:]')
+        SUBNET=$(aws ec2 describe-subnets \
+            --region "$REGION" \
+            --filters "Name=default-for-az,Values=true" \
+                      "Name=availability-zone,Values=$AZ_TRIM" \
+            --query "Subnets[0].SubnetId" \
+            --output text 2>/dev/null)
+        if [ -n "$SUBNET" ] && [ "$SUBNET" != "None" ]; then
+            echo "    $AZ_TRIM -> $SUBNET"
+            SUBNET_IDS="$SUBNET_IDS $SUBNET"
+        else
+            echo "    ADVERTENCIA: no hay subnet por defecto en $AZ_TRIM (se omite)."
+        fi
+    done
+    SUBNET_IDS=$(echo "$SUBNET_IDS" | sed 's/^ *//')
+else
+    # Selección automática: una subnet por AZ, tomando las 2 primeras AZ
+    echo "  Sin AZS fijadas — eligiendo 2 AZ automáticamente."
+    echo "  (Si falla por la AZ, reintenta con: AZS=\"us-east-1a,us-east-1b\" bash $0)"
+    SUBNET_IDS=$(aws ec2 describe-subnets \
+        --region "$REGION" \
+        --filters "Name=default-for-az,Values=true" \
+        --query "Subnets[].{AZ:AvailabilityZone,Id:SubnetId}" \
+        --output text 2>/dev/null \
+        | sort -u -k1,1 \
+        | head -2 \
+        | awk '{print $2}')
+fi
+
+# Verificar que tenemos al menos 2 subnets en 2 AZ distintas
+SUBNET_COUNT=$(echo "$SUBNET_IDS" | wc -w)
+if [ "$SUBNET_COUNT" -lt 2 ]; then
+    echo "ERROR: EKS requiere subnets en al menos 2 AZ distintas; se encontraron $SUBNET_COUNT."
+    echo "       AZ disponibles con subnet por defecto en $REGION:"
+    aws ec2 describe-subnets --region "$REGION" \
+        --filters "Name=default-for-az,Values=true" \
+        --query "Subnets[].AvailabilityZone" --output text | tr '\t' '\n' | sort -u | sed 's/^/         /'
+    echo "       Reintenta fijando 2 AZ buenas, ej:"
+    echo "         AZS=\"us-east-1a,us-east-1b\" bash $0"
     exit 1
 fi
 
 # Convertir de espacio/tab a coma para el parámetro subnetIds
-SUBNET_IDS_COMMA=$(echo "$SUBNET_IDS" | tr '[:space:]' ',' | sed 's/,$//')
+SUBNET_IDS_COMMA=$(echo "$SUBNET_IDS" | tr '[:space:]' ',' | sed 's/,$//' | sed 's/^,//')
 # Convertir a array para --subnets del nodegroup
 read -ra SUBNET_ARRAY <<< "$SUBNET_IDS"
-echo "Subnets: $SUBNET_IDS_COMMA"
+echo "Subnets ($SUBNET_COUNT): $SUBNET_IDS_COMMA"
 echo ""
 
 echo "[5/5] Cluster EKS..."
