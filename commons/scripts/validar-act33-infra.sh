@@ -20,7 +20,7 @@
 set -uo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
-CLUSTER_NAME="${CLUSTER_NAME:-eks-iny1105}"
+CLUSTER_NAME="${CLUSTER_NAME:-iny1105-ea3-cluster}"
 SEP="------------------------------------------------------------"
 
 # Resultados (se rellenan durante las pruebas)
@@ -34,11 +34,17 @@ echo "$SEP"
 
 # ── 0. Conexión al cluster ──────────────────────────────────────────────
 echo; echo "[0] Conexión al cluster..."
+if ! kubectl get nodes >/dev/null 2>&1; then
+    echo "    kubectl no conecta. Configurando kubeconfig..."
+    aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>&1 | sed 's/^/    /'
+fi
 if kubectl get nodes >/dev/null 2>&1; then
     R_KUBECTL="✅"
     kubectl get nodes -o wide
 else
-    echo "ERROR: kubectl no conecta. Ejecuta create-cluster.sh primero."
+    echo "ERROR: kubectl sigue sin conectar al cluster '$CLUSTER_NAME' en $REGION."
+    echo "       Verifica que el cluster exista:  aws eks list-clusters --region $REGION"
+    echo "       Si no existe, créalo:            bash commons/scripts/create-cluster.sh"
     exit 1
 fi
 
