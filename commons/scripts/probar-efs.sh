@@ -77,8 +77,24 @@ else
             && echo "      mount target en $SUBNET ✅" \
             || echo "      mount target en $SUBNET (ya existe o error)"
     done
-    echo "    Esperando 60s a que los mount targets estén 'available'..."
-    sleep 60
+    # Esperar (polling) a que TODOS los mount targets estén 'available'.
+    # Los mount targets de EFS tardan 2-4 min; antes de eso el DNS no resuelve
+    # y el montaje NFS falla con "exit status 32".
+    echo "    Esperando a que los mount targets estén 'available' (hasta 5 min)..."
+    for t in $(seq 1 30); do
+        STATES=$(aws efs describe-mount-targets --file-system-id "$FS_ID" --region "$REGION" \
+            --query "MountTargets[].LifeCycleState" --output text 2>/dev/null)
+        echo "      [$((t*10))s] estados: ${STATES:-<sin datos>}"
+        # éxito sólo si hay estados y ninguno distinto de 'available'
+        if [ -n "$STATES" ] && ! echo "$STATES" | grep -qvw "available"; then
+            echo "      Todos los mount targets están available ✅"
+            break
+        fi
+        sleep 10
+    done
+    # Margen extra para propagación del DNS del endpoint EFS
+    echo "    Esperando 30s adicionales para propagación de DNS..."
+    sleep 30
 
     # ── 3. Prueba B: montar EFS como volumen NFS nativo (sin CSI) ──────────
     echo; echo "[3] Prueba NFS nativo — Pod que monta el EFS por NFS..."
@@ -93,7 +109,7 @@ spec:
   containers:
   - name: app
     image: public.ecr.aws/docker/library/busybox:latest
-    command: ["sh","-c","echo hola-efs > /data/test.txt && cat /data/test.txt && sleep 60"]
+    command: ["sh","-c","echo hola-efs > /data/test.txt && cat /data/test.txt && sleep 600"]
     volumeMounts:
     - name: efs-vol
       mountPath: /data
@@ -103,16 +119,23 @@ spec:
       server: $EFS_DNS
       path: /
 EOF
-    echo "    Esperando 45s a que el Pod monte el NFS..."
-    sleep 45
-    PHASE=$(kubectl get pod efs-nfs-test -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null)
-    LOGS=$(kubectl logs efs-nfs-test -n "$NS" 2>/dev/null)
-    echo "    Pod phase: $PHASE | logs: $LOGS"
+    echo "    Esperando a que el Pod monte el NFS (hasta 3 min)..."
+    LOGS=""
+    for t in $(seq 1 18); do
+        PHASE=$(kubectl get pod efs-nfs-test -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null)
+        LOGS=$(kubectl logs efs-nfs-test -n "$NS" 2>/dev/null)
+        echo "      [$((t*10))s] phase=${PHASE:-?}"
+        if echo "$LOGS" | grep -q "hola-efs"; then
+            break
+        fi
+        sleep 10
+    done
     if echo "$LOGS" | grep -q "hola-efs"; then
         R_NFS_MOUNT="✅ EFS montado por NFS nativo SIN IAM (viable para act33)"
+        echo "      logs del Pod: $LOGS"
     else
-        R_NFS_MOUNT="❌ no se montó (ver: kubectl describe pod efs-nfs-test -n $NS)"
-        kubectl describe pod efs-nfs-test -n "$NS" 2>/dev/null | grep -A6 "Events:" | sed 's/^/      /'
+        R_NFS_MOUNT="❌ no se montó (ver eventos abajo)"
+        kubectl describe pod efs-nfs-test -n "$NS" 2>/dev/null | grep -A8 "Events:" | sed 's/^/      /'
     fi
     echo "    => $R_NFS_MOUNT"
 
