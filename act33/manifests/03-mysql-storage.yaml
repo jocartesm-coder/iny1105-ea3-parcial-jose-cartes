@@ -1,0 +1,45 @@
+# Almacenamiento persistente para MySQL usando hostPath.
+#
+# hostPath monta un directorio del DISCO DEL NODO dentro del Pod. Los datos
+# sobreviven a la recreación del Pod (mientras el Pod vuelva al MISMO nodo),
+# a diferencia de emptyDir, que se borra con el Pod.
+#
+# NOTA DIDÁCTICA — hostPath vs EBS/EFS:
+#   - hostPath: simple, sin dependencias, pero atado a UN nodo. No sirve si el
+#     Pod se reprograma a otro nodo. Útil para aprender el modelo PV/PVC.
+#   - EBS (ReadWriteOnce): volumen de bloque, un solo nodo a la vez. Ideal para
+#     bases de datos como MySQL en producción.
+#   - EFS (ReadWriteMany): sistema de archivos compartido entre varios nodos.
+#     Ideal para contenido compartido (ej: /wp-content de varias réplicas WP).
+#   En este Learner Lab usamos hostPath porque EBS/EFS requieren permisos IAM
+#   no disponibles.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-pv
+  labels:
+    app: mysql
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce          # un solo nodo monta el volumen (como EBS)
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual   # PV estático: no usa aprovisionamiento dinámico
+  hostPath:
+    path: /mnt/data/mysql
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: wordpress
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual   # debe coincidir con el PV de arriba
+  resources:
+    requests:
+      storage: 2Gi
