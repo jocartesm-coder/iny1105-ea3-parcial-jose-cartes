@@ -4,14 +4,21 @@
 
 | Archivo | Qué completar |
 |---|---|
+| `manifests/namespace.yaml` | (ya configurado) crea el namespace `monitoring` |
 | `manifests/deployment.yaml` | name, replicas, labels, image, ports |
 | `manifests/service.yaml` | name, selector, ports, type |
 | `manifests/ingress.yaml` | name, ingress.class, service name, port |
 
-## Comandos de esta actividad
+## Aplicar los manifiestos directamente
+
+Aplica cada manifiesto con `kubectl apply -f`, **respetando este orden** (el
+namespace debe existir antes que los objetos que viven dentro de él):
 
 ```bash
-# Aplicar manifiestos
+# 1. Crear el namespace (debe ir primero)
+kubectl apply -f manifests/namespace.yaml
+
+# 2. Crear el resto de objetos
 kubectl apply -f manifests/deployment.yaml
 kubectl apply -f manifests/service.yaml
 kubectl apply -f manifests/ingress.yaml

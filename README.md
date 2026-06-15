@@ -58,9 +58,10 @@ iny1105-ea3-nombre-apellido/
 │   └── README.md
 ├── commons/
 │   └── scripts/
+│       ├── setup-cloudshell.sh ← instala kubectl y Terraform en AWS CloudShell
 │       ├── create-cluster.sh   ← crea el cluster EKS
 │       ├── delete-cluster.sh   ← elimina el cluster EKS
-│       └── apply-manifests.sh  ← aplica todos los manifiestos de una actividad
+│       └── apply-manifests.sh  ← SOLO act31: aplica todos los manifiestos de una vez
 ├── .gitignore
 └── README.md               ← este archivo
 ```
@@ -94,9 +95,15 @@ bash commons/scripts/create-cluster.sh
 # Eliminar el cluster EKS (obligatorio al terminar cada clase)
 bash commons/scripts/delete-cluster.sh
 
-# Aplicar todos los manifiestos de una actividad
+# Aplicar todos los manifiestos de UNA actividad (solo act31)
 bash commons/scripts/apply-manifests.sh act31
 ```
+
+> **Importante:** El script `apply-manifests.sh` se usa **solo en la Act 3.1**,
+> como introducción. En las actividades 3.2, 3.3 y 3.4 aplicarás los manifiestos
+> **manualmente** con `kubectl apply -f manifests/<archivo>.yaml`, respetando el
+> orden indicado en el README de cada actividad. Así aprendes las dependencias
+> entre objetos de Kubernetes.
 
 ---
 
