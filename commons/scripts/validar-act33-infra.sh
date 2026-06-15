@@ -25,7 +25,7 @@ SEP="------------------------------------------------------------"
 
 # Resultados (se rellenan durante las pruebas)
 R_KUBECTL="?"; R_METRICS="?"; R_EBS_ADDON="?"; R_EFS_FS="?"
-R_EFS_ADDON="?"; R_ALB_IAM="?"; R_OIDC="?"; R_HPA="?"
+R_EFS_ADDON="?"; R_ALB_IAM="?"; R_OIDC="?"; R_HPA="?"; R_NETPOL="?"
 
 echo "$SEP"
 echo " VALIDACIÓN DE INFRAESTRUCTURA — Act 3.3"
@@ -136,6 +136,34 @@ else
 fi
 echo "    => $R_ALB_IAM"
 
+# ── 6. NetworkPolicy: ¿el VPC CNI aplica políticas de red? ────────────────
+echo; echo "$SEP"; echo "[6] Soporte de NetworkPolicy (VPC CNI)..."
+R_NETPOL="?"
+# El VPC CNI (aws-node) soporta NetworkPolicy si tiene habilitado el flag.
+NP_ENABLED=$(kubectl get daemonset aws-node -n kube-system \
+    -o jsonpath='{.spec.template.spec.containers[*].args}' 2>/dev/null | grep -o "enable-network-policy=true" || true)
+if [ -n "$NP_ENABLED" ]; then
+    R_NETPOL="✅ VPC CNI con network policy habilitada"
+else
+    # Probar creando una NetworkPolicy de prueba (objeto API, se acepta aunque el CNI no la aplique)
+    if kubectl get crd 2>/dev/null | grep -q "policyendpoints.networking.k8s.aws"; then
+        R_NETPOL="⚠️ CRD de network policy presente pero flag no detectado — verificar enforcement real"
+    else
+        cat <<'NPEOF' | kubectl apply --dry-run=server -f - >/dev/null 2>&1 && R_NETPOL="⚠️ la API acepta NetworkPolicy, pero el VPC CNI puede NO aplicarla (enforcement) sin enable-network-policy=true" || R_NETPOL="❌ la API rechaza NetworkPolicy"
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-netpol-dryrun
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+NPEOF
+    fi
+fi
+echo "    => $R_NETPOL"
+
 # ── REPORTE FINAL ─────────────────────────────────────────────────────────
 echo; echo "$SEP"; echo " REPORTE FINAL"; echo "$SEP"
 printf "  %-22s %s\n" "kubectl/cluster:"   "$R_KUBECTL"
@@ -145,6 +173,7 @@ printf "  %-22s %s\n" "EBS CSI addon:"      "$R_EBS_ADDON"
 printf "  %-22s %s\n" "EFS API:"            "$R_EFS_FS"
 printf "  %-22s %s\n" "EFS CSI addon:"      "$R_EFS_ADDON"
 printf "  %-22s %s\n" "ALB (elbv2):"        "$R_ALB_IAM"
+printf "  %-22s %s\n" "NetworkPolicy:"      "$R_NETPOL"
 echo "$SEP"
 echo " Copia este reporte completo y pégalo en el chat para diseñar la actividad."
 echo "$SEP"
