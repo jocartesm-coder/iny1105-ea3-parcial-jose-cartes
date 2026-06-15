@@ -9,6 +9,7 @@
 
 CLUSTER_NAME="iny1105-ea3-cluster"
 REGION="us-east-1"
+K8S_VERSION="1.32"          # Versión de Kubernetes fija para el cluster
 NODE_GROUP="standard-workers"
 NODE_TYPE="t3.small"
 NODES_DESIRED=2
@@ -102,19 +103,9 @@ CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGI
 if [ -z "$CLUSTER_STATUS" ]; then
     echo "Creando cluster EKS (esto tardará 10-15 minutos)..."
 
-    # Detectar versión de Kubernetes disponible (sin hardcodear)
-    K8S_VERSION=$(aws eks describe-addon-versions \
-        --region "$REGION" \
-        --query "sort_by(addons[0].addonVersions, &addonVersion)[-1].compatibilities[0].clusterVersion" \
-        --output text 2>/dev/null || echo "")
-
-    if [ -z "$K8S_VERSION" ] || [ "$K8S_VERSION" == "None" ]; then
-        echo "No se pudo detectar la versión de Kubernetes. Se usará la versión por defecto de AWS."
-        K8S_VERSION_ARGS=()
-    else
-        echo "Versión de Kubernetes detectada: $K8S_VERSION"
-        K8S_VERSION_ARGS=("--kubernetes-version" "$K8S_VERSION")
-    fi
+    # Usar la versión de Kubernetes fija definida arriba ($K8S_VERSION)
+    echo "Versión de Kubernetes solicitada: $K8S_VERSION"
+    K8S_VERSION_ARGS=("--kubernetes-version" "$K8S_VERSION")
 
     aws eks create-cluster \
         --name "$CLUSTER_NAME" \
