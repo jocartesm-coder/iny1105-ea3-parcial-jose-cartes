@@ -45,9 +45,10 @@ sleep 15
 kubectl get hpa -n wordpress 2>&1 | sed 's/^/    /'
 
 echo; echo "[7] Acceso a WordPress por NodePort 30093:"
+echo "    Abriendo el puerto 30093 en el Security Group de los nodos..."
+bash "$(dirname "$0")/open-nodeport.sh" 30093 2>&1 | sed 's/^/      /'
 NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)
 echo "    URL externa: http://$NODE_IP:30093"
-echo "    (recuerda abrir el puerto 30093 en el Security Group del nodo para probar desde el navegador)"
 echo "    Prueba interna (desde un Pod temporal):"
 kubectl run wp-curl --rm -i --restart=Never -n wordpress \
     --image=public.ecr.aws/docker/library/busybox:latest --timeout=60s \
