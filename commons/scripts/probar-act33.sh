@@ -10,7 +10,13 @@ echo "$SEP"; echo " PRUEBA FUNCIONAL — Act 3.3 (WordPress + MySQL)"; echo "$SE
 kubectl get nodes >/dev/null 2>&1 || { echo "ERROR: kubectl no conecta."; exit 1; }
 
 echo; echo "[1] Aplicando manifiestos en orden..."
-for f in 01-namespace 02-mysql-secret 03-mysql-storage 04-mysql 05-wordpress 06-wordpress-hpa 07-networkpolicy; do
+# 1. namespace
+kubectl apply -f "$M/01-namespace.yaml" 2>&1 | sed 's/^/      /'
+# 2. Secret desde AWS Secrets Manager (script, no YAML)
+echo "    bash $M/02-mysql-secret-from-sm.sh"
+bash "$M/02-mysql-secret-from-sm.sh" 2>&1 | sed 's/^/      /'
+# 3..7 resto de manifiestos
+for f in 03-mysql-storage 04-mysql 05-wordpress 06-wordpress-hpa 07-networkpolicy; do
     echo "    kubectl apply -f $M/$f.yaml"
     kubectl apply -f "$M/$f.yaml" 2>&1 | sed 's/^/      /'
 done

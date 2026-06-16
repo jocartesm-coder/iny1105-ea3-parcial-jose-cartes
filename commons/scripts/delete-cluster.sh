@@ -114,3 +114,16 @@ echo "=================================================="
 echo " Cluster $CLUSTER_NAME eliminado correctamente."
 echo " Los recursos EC2 asociados también fueron liberados."
 echo "=================================================="
+echo ""
+
+# ── Recordatorio: secreto de Act 3.3 en AWS Secrets Manager ──────────────
+# El secreto persiste entre sesiones (no se borra con el cluster). Puedes
+# conservarlo para la próxima clase o eliminarlo si ya no lo necesitas.
+SM_SECRET="iny1105/wordpress/mysql"
+if aws secretsmanager describe-secret --region "$REGION" \
+       --secret-id "$SM_SECRET" >/dev/null 2>&1; then
+    echo "NOTA (Act 3.3): el secreto '$SM_SECRET' sigue en AWS Secrets Manager."
+    echo "  Para eliminarlo (opcional):"
+    echo "    aws secretsmanager delete-secret --region $REGION \\"
+    echo "      --secret-id $SM_SECRET --force-delete-without-recovery"
+fi
