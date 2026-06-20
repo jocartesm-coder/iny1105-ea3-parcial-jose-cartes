@@ -60,19 +60,26 @@ kubectl get secret mysql-secret -n wordpress
 ## Fase 2 — Almacenamiento persistente
 
 ```bash
-# PV + PVC con hostPath (disco del nodo)
+# 1. Etiqueta UN nodo para anclar el volumen de MySQL.
+#    El PV usa nodeAffinity: el Pod de MySQL correra SIEMPRE en este nodo,
+#    para que vuelva a encontrar sus datos tras un reinicio.
+NODO=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+kubectl label node "$NODO" mysql-node=true
+
+# 2. Crea el PV (volumen local) y el PVC
 kubectl apply -f act33/manifests/03-mysql-storage.yaml
 
 # El PVC debe quedar en estado Bound
 kubectl get pvc -n wordpress
 ```
 
-> **Almacenamiento en este laboratorio:** usamos `hostPath` (un directorio del
-> disco del nodo). Los datos sobreviven a la recreación del Pod si vuelve al
-> mismo nodo. En **producción** una base de datos usaría **EBS**
+> **Almacenamiento en este laboratorio:** usamos un volumen `local` (un
+> directorio del disco de un nodo) anclado con `nodeAffinity`. Gracias al
+> anclaje, el Pod de MySQL siempre se programa en el mismo nodo y conserva sus
+> datos entre reinicios. En **producción** una base de datos usaría **EBS**
 > (ReadWriteOnce, el volumen sigue al Pod entre nodos) y el contenido
 > compartido entre réplicas usaría **EFS** (ReadWriteMany). EBS y EFS requieren
-> permisos IAM no disponibles en el Learner Lab.
+> permisos IAM o configuración de red no disponibles en el Learner Lab.
 
 ## Fase 3 — Desplegar MySQL y WordPress
 

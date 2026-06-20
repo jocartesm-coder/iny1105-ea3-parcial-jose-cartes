@@ -1,18 +1,26 @@
-# Almacenamiento persistente para MySQL usando hostPath.
+# Almacenamiento persistente para MySQL usando un volumen local (hostPath con
+# nodeAffinity).
 #
-# hostPath monta un directorio del DISCO DEL NODO dentro del Pod. Los datos
-# sobreviven a la recreación del Pod (mientras el Pod vuelva al MISMO nodo),
-# a diferencia de emptyDir, que se borra con el Pod.
+# El volumen vive en el DISCO DE UN NODO (/mnt/data/mysql). Para que el Pod de
+# MySQL siempre encuentre sus datos, anclamos el volumen a un nodo concreto con
+# nodeAffinity: el PV solo se puede usar en el nodo que tenga la etiqueta
+# "mysql-node=true". Como el Pod monta este PV, Kubernetes lo programará
+# SIEMPRE en ese mismo nodo, garantizando que los datos persistan entre
+# reinicios del Pod.
+#
+# IMPORTANTE: antes de aplicar este manifiesto debes etiquetar UN nodo:
+#   NODO=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+#   kubectl label node "$NODO" mysql-node=true
 #
 # NOTA DIDÁCTICA — hostPath vs EBS/EFS:
-#   - hostPath: simple, sin dependencias, pero atado a UN nodo. No sirve si el
-#     Pod se reprograma a otro nodo. Útil para aprender el modelo PV/PVC.
-#   - EBS (ReadWriteOnce): volumen de bloque, un solo nodo a la vez. Ideal para
-#     bases de datos como MySQL en producción.
+#   - hostPath + nodeAffinity: simple, sin permisos AWS, pero atado a UN nodo.
+#     Si ese nodo muere, los datos se pierden. Útil para aprender PV/PVC.
+#   - EBS (ReadWriteOnce): volumen de bloque que se "sigue" al Pod entre nodos.
+#     Es lo correcto para una base de datos en producción.
 #   - EFS (ReadWriteMany): sistema de archivos compartido entre varios nodos.
 #     Ideal para contenido compartido (ej: /wp-content de varias réplicas WP).
 #   En este Learner Lab usamos hostPath porque EBS/EFS requieren permisos IAM
-#   no disponibles.
+#   o configuración de red no disponibles.
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -27,9 +35,18 @@ spec:
     - ReadWriteOnce          # un solo nodo monta el volumen (como EBS)
   persistentVolumeReclaimPolicy: Retain
   storageClassName: manual   # PV estático: no usa aprovisionamiento dinámico
-  hostPath:
-    path: /mnt/data/mysql
-    type: DirectoryOrCreate
+  local:
+    path: /mnt/data/mysql    # carpeta en el disco del nodo etiquetado
+  # nodeAffinity ancla el volumen (y por tanto el Pod) al nodo con la etiqueta
+  # mysql-node=true. Así el Pod siempre vuelve al nodo donde están los datos.
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: mysql-node
+              operator: In
+              values:
+                - "true"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
