@@ -284,6 +284,19 @@ else
 fi
 echo ""
 
+# Habilitar enforcement de NetworkPolicy (necesario para Act 3.3).
+# El VPC CNI solo APLICA las NetworkPolicies si se instala como addon de EKS
+# con enableNetworkPolicy=true. No requiere permisos IAM.
+echo "Habilitando enforcement de NetworkPolicy en el VPC CNI..."
+aws eks create-addon --cluster-name "$CLUSTER_NAME" --region "$REGION" \
+    --addon-name vpc-cni \
+    --configuration-values '{"enableNetworkPolicy":"true"}' \
+    --resolve-conflicts OVERWRITE >/dev/null 2>&1 \
+    && echo "  Addon vpc-cni configurado (tarda ~90s en quedar ACTIVE)." \
+    || echo "  NOTA: no se pudo configurar el addon vpc-cni (las NetworkPolicies se" \
+            "aceptarán pero podrían no aplicarse)."
+echo ""
+
 echo "=================================================="
 echo " Cluster $CLUSTER_NAME listo para usar"
 echo " RECUERDA: Al terminar la clase ejecuta:"
