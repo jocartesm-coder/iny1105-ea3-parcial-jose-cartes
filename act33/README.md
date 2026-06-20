@@ -57,6 +57,16 @@ bash act33/manifests/02-mysql-secret-from-sm.sh
 kubectl get secret mysql-secret -n wordpress
 ```
 
+> **En producción esto se hace distinto.** El principio que aplicas aquí es
+> correcto (las credenciales viven fuera del repositorio, en Secrets Manager),
+> pero el mecanismo —leer con la CLI y crear el Secret a mano— es una
+> simplificación. En producción se usa el **External Secrets Operator** o el
+> **Secrets Store CSI Driver**, que sincronizan Secrets Manager con Kubernetes
+> automáticamente (reflejan la rotación de credenciales sin intervención
+> manual). Ambos requieren IRSA (roles IAM para service accounts), no disponible
+> en el Learner Lab. Además, un Secret de Kubernetes solo está codificado en
+> base64, no cifrado: en producción se cifra etcd en reposo con KMS.
+
 ## Fase 2 — Almacenamiento persistente
 
 ```bash
