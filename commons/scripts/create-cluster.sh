@@ -271,19 +271,6 @@ echo "✓ Cluster listo. Verificando nodos:"
 kubectl get nodes
 echo ""
 
-# Instalar Metrics Server (necesario para autoscaling / HPA en Act 3.3).
-# No requiere permisos IAM. Un cluster EKS recién creado NO lo trae.
-echo "Instalando Metrics Server (para autoscaling / kubectl top)..."
-if kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; then
-    echo "  Metrics Server ya está instalado."
-else
-    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml >/dev/null 2>&1 \
-        && echo "  Metrics Server aplicado (tarda ~1 min en reportar métricas)." \
-        || echo "  ADVERTENCIA: no se pudo instalar Metrics Server. Instálalo manual si usas HPA:" \
-           "kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml"
-fi
-echo ""
-
 # Habilitar enforcement de NetworkPolicy (necesario para Act 3.3).
 # El VPC CNI solo APLICA las NetworkPolicies si se instala como addon de EKS
 # con enableNetworkPolicy=true. No requiere permisos IAM.

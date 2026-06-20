@@ -36,8 +36,8 @@ red y escalado automático.
 ## Requisitos previos
 
 ```bash
-# El cluster debe estar creado (instala también el Metrics Server, necesario
-# para el autoscaling).
+# El cluster debe estar creado. El script habilita el enforcement de
+# NetworkPolicy. El Metrics Server lo instalarás tú en la Fase 5.
 bash commons/scripts/create-cluster.sh
 ```
 
@@ -109,7 +109,13 @@ kubectl describe networkpolicy mysql-allow-wordpress -n wordpress
 ## Fase 5 — Autoscaling bajo carga
 
 ```bash
-# Aplica el HPA (escala WordPress de 1 a 5 réplicas según CPU)
+# 1. Instala el Metrics Server (provee las métricas de CPU que necesita el HPA).
+#    NO viene instalado en un cluster EKS recién creado.
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+sleep 60
+kubectl top pods -n wordpress     # debe responder con CPU/memoria por Pod
+
+# 2. Aplica el HPA (escala WordPress de 1 a 5 réplicas según CPU)
 kubectl apply -f act33/manifests/06-wordpress-hpa.yaml
 kubectl get hpa -n wordpress      # debe mostrar "cpu: X%/50%", no <unknown>
 
