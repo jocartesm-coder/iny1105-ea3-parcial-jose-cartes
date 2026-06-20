@@ -7,18 +7,14 @@ red y escalado automático.
 
 ## Arquitectura
 
-```
-                Internet  →  NodePort 30093
-                              │
-                ┌─────────────▼─────────────┐
-                │  WordPress (frontend)      │  Deployment + HPA (1→5 réplicas)
-                └─────────────┬─────────────┘
-                              │  (NetworkPolicy: solo WordPress → MySQL)
-                ┌─────────────▼─────────────┐
-                │  MySQL (base de datos)     │  Deployment + PV/PVC (datos)
-                └────────────────────────────┘
-                     namespace: wordpress
-```
+![Arquitectura de la solución: WordPress + MySQL en Kubernetes](img/arquitectura.png)
+
+El frontend WordPress es accesible desde Internet por un Service NodePort y se
+escala automáticamente con un HPA. La base de datos MySQL es interna
+(ClusterIP), persiste sus datos en un PV/PVC anclado a un nodo, y queda
+protegida por una NetworkPolicy que solo permite el acceso desde WordPress. Las
+credenciales provienen de AWS Secrets Manager. Todo vive en el namespace
+`wordpress`.
 
 ## Manifiestos
 
